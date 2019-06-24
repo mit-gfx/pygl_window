@@ -20,7 +20,7 @@ def print_info(*message):
     print('\033[96m', *message, '\033[0m')
 
 class PyglWidget(QOpenGLWidget):
-    def __init__(self, shapes, parent=None):
+    def __init__(self, shapes, fps=30, parent=None):
         super(PyglWidget, self).__init__(parent)
 
         # Camera-related.
@@ -49,11 +49,12 @@ class PyglWidget(QOpenGLWidget):
         self.asp_ratio = self.init_width * 1.0 / self.init_height
 
         self.shapes = shapes
+        self.shape_lists = []
 
         timer = QTimer(self)
         timer.timeout.connect(self.update_frame_idx)
         self.frame_idx = 0
-        timer.start(20)
+        timer.start(int(1000 / fps))
 
     def update_frame_idx(self):
         self.frame_idx += 1
@@ -86,6 +87,21 @@ class PyglWidget(QOpenGLWidget):
         gl.glEnable(gl.GL_NORMALIZE)
         gl.glClearColor(0x11 / 255, 0x2F / 255, 0x41 / 255, 1.0)
 
+        self.shape_lists = []
+        for shape in self.shapes:
+            l = gl.glGenLists(1)
+            gl.glNewList(l, gl.GL_COMPILE)
+            gl.glBegin(gl.GL_LINES)
+            for triangle in shape.triangles:
+                for i in range(3):
+                    v = triangle[i]
+                    u = triangle[(i + 1) % 3]
+                    gl.glVertex3d(v[0], v[1], v[2])
+                    gl.glVertex3d(u[0], u[1], u[2])
+            gl.glEnd()
+            gl.glEndList()
+            self.shape_lists.append(l)
+
     def paintGL(self):
         gl.glClear(gl.GL_COLOR_BUFFER_BIT | gl.GL_DEPTH_BUFFER_BIT)
 
@@ -98,26 +114,12 @@ class PyglWidget(QOpenGLWidget):
         # View matrix.
         V = self.generate_view_matrix()
 
-        for shape in self.shapes:
+        for shape, l in zip(self.shapes, self.shape_lists):
             material = shape.get_material(self.frame_idx)
             transform = shape.get_transform(self.frame_idx)
             gl.glColor(material[0], material[1], material[2])
             gl.glLoadMatrixd((V @ transform).T)
-            '''
-            gl.glBegin(gl.GL_TRIANGLES)
-            for triangle in shape.triangles:
-                for v in triangle:
-                    gl.glVertex3d(v[0], v[1], v[2])
-            gl.glEnd()
-            '''
-            gl.glBegin(gl.GL_LINES)
-            for triangle in shape.triangles:
-                for i in range(3):
-                    v = triangle[i]
-                    u = triangle[(i + 1) % 3]
-                    gl.glVertex3d(v[0], v[1], v[2])
-                    gl.glVertex3d(u[0], u[1], u[2])
-            gl.glEnd()
+            gl.glCallList(l)
 
     # Don't change the function signature here.
     def mousePressEvent(self, event):
@@ -168,13 +170,13 @@ class PyglWidget(QOpenGLWidget):
         return V
 
 class PyglQtMainWindow(QMainWindow):
-    def __init__(self, name, parent=None):
+    def __init__(self, name, parent):
         super(PyglQtMainWindow, self).__init__()
 
         centralWidget = QWidget()
         self.setCentralWidget(centralWidget)
 
-        self.glWidget = PyglWidget(parent.shapes)
+        self.glWidget = PyglWidget(shapes=parent.shapes, fps=parent.fps)
 
         self.glWidgetArea = QScrollArea()
         self.glWidgetArea.setWidget(self.glWidget)
@@ -245,9 +247,10 @@ class PyglShape(object):
         return self.material_in_frames[frame_idx]
 
 class PyglWindow:
-    def __init__(self, name='default window'):
+    def __init__(self, name='default window', fps=30):
         self.name = name
         self.shapes = []
+        self.fps = fps
 
     def render_shape(self, vertices, faces,
                      rotation=np.eye(3),
