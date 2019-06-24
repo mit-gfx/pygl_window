@@ -1,5 +1,5 @@
 import numpy as np
-import sys
+import sys, os
 
 from PyQt5.QtCore import pyqtSignal, QSize, Qt, QTimer, QPoint
 from PyQt5.QtWidgets import (QAction, QApplication, QGridLayout, QLabel,
@@ -173,26 +173,41 @@ class PyglQtMainWindow(QMainWindow):
     def __init__(self, name, parent):
         super(PyglQtMainWindow, self).__init__()
 
-        centralWidget = QWidget()
-        self.setCentralWidget(centralWidget)
+        central_widget = QWidget()
+        self.setCentralWidget(central_widget)
 
-        self.glWidget = PyglWidget(shapes=parent.shapes, fps=parent.fps)
+        self.gl_widget = PyglWidget(shapes=parent.shapes, fps=parent.fps)
 
-        self.glWidgetArea = QScrollArea()
-        self.glWidgetArea.setWidget(self.glWidget)
-        self.glWidgetArea.setWidgetResizable(True)
-        self.glWidgetArea.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.glWidgetArea.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
-        self.glWidgetArea.setSizePolicy(QSizePolicy.Ignored,
+        self.gl_widget_area = QScrollArea()
+        self.gl_widget_area.setWidget(self.gl_widget)
+        self.gl_widget_area.setWidgetResizable(True)
+        self.gl_widget_area.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.gl_widget_area.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.gl_widget_area.setSizePolicy(QSizePolicy.Ignored,
                 QSizePolicy.Ignored)
-        self.glWidgetArea.setMinimumSize(50, 50)
+        self.gl_widget_area.setMinimumSize(50, 50)
 
-        centralLayout = QGridLayout()
-        centralLayout.addWidget(self.glWidgetArea, 0, 0)
-        centralWidget.setLayout(centralLayout)
+        central_layout = QGridLayout()
+        central_layout.addWidget(self.gl_widget_area, 0, 0)
+        central_widget.setLayout(central_layout)
 
         self.setWindowTitle('Pygl window: ' + name)
+        self.name = name
         self.resize(1200, 800)
+
+        self.parent = parent
+        if parent.record:
+            timer = QTimer(self)
+            timer.timeout.connect(self.take_snapshot)
+            self.frame_idx = 0
+            timer.start(int(1000 / parent.fps))
+
+    def take_snapshot(self):
+        if self.parent.record:
+            image = self.gl_widget.grabFramebuffer()
+            os.makedirs(self.name, exist_ok=True)
+            image.save(os.path.join(self.name, str(self.frame_idx) + '.png'))
+            self.frame_idx += 1
 
 class PyglShape(object):
     def __init__(self, vertices, faces, transform, material):
@@ -247,10 +262,11 @@ class PyglShape(object):
         return self.material_in_frames[frame_idx]
 
 class PyglWindow:
-    def __init__(self, name='default window', fps=30):
+    def __init__(self, name='default window', fps=30, record=False):
         self.name = name
         self.shapes = []
         self.fps = fps
+        self.record = record
 
     def render_shape(self, vertices, faces,
                      rotation=np.eye(3),
